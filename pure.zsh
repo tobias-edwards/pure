@@ -3,6 +3,11 @@
 # https://github.com/sindresorhus/pure
 # MIT License
 
+# Adapted by Tobias Edwards:
+# - Wrap status/actions/environments in brackets
+# - Single-line prompt
+# - Remove unused things e.g. execution time
+
 # For my own and others sanity
 # git:
 # %b => current branch
@@ -23,64 +28,6 @@
 # \e[K  => clears everything after the cursor on the current line
 # \e[2K => clear everything on the current line
 
-
-# Turns seconds into human readable time.
-# 165392 => 1d 21h 56m 32s
-# https://github.com/sindresorhus/pretty-time-zsh
-prompt_pure_human_time_to_var() {
-	local human total_seconds=$1 var=$2
-	local days=$(( total_seconds / 60 / 60 / 24 ))
-	local hours=$(( total_seconds / 60 / 60 % 24 ))
-	local minutes=$(( total_seconds / 60 % 60 ))
-	local seconds=$(( total_seconds % 60 ))
-	(( days > 0 )) && human+="${days}d "
-	(( hours > 0 )) && human+="${hours}h "
-	(( minutes > 0 )) && human+="${minutes}m "
-	human+="${seconds}s"
-
-	# Store human readable time in a variable as specified by the caller
-	typeset -g "${var}"="${human}"
-}
-
-# Stores (into prompt_pure_cmd_exec_time) the execution
-# time of the last command if set threshold was exceeded.
-prompt_pure_check_cmd_exec_time() {
-	integer elapsed
-	(( elapsed = EPOCHSECONDS - ${prompt_pure_cmd_timestamp:-$EPOCHSECONDS} ))
-	typeset -g prompt_pure_cmd_exec_time=
-	(( elapsed > ${PURE_CMD_MAX_EXEC_TIME:-5} )) && {
-		prompt_pure_human_time_to_var $elapsed "prompt_pure_cmd_exec_time"
-	}
-}
-
-prompt_pure_set_title() {
-	setopt localoptions noshwordsplit
-
-	# Emacs terminal does not support settings the title.
-	(( ${+EMACS} || ${+INSIDE_EMACS} )) && return
-
-	case $TTY in
-		# Don't set title over serial console.
-		/dev/ttyS[0-9]*) return;;
-	esac
-
-	# Show hostname if connected via SSH.
-	local hostname=
-	if [[ -n $prompt_pure_state[username] ]]; then
-		# Expand in-place in case ignore-escape is used.
-		hostname="${(%):-(%m) }"
-	fi
-
-	local -a opts
-	case $1 in
-		expand-prompt) opts=(-P);;
-		ignore-escape) opts=(-r);;
-	esac
-
-	# Set title atomically in one print statement so that it works when XTRACE is enabled.
-	print -n $opts $'\e]0;'${hostname}${2}$'\a'
-}
-
 prompt_pure_preexec() {
 	if [[ -n $prompt_pure_git_fetch_pattern ]]; then
 		# Detect when Git is performing pull/fetch, including Git aliases.
@@ -91,11 +38,6 @@ prompt_pure_preexec() {
 			async_flush_jobs 'prompt_pure'
 		fi
 	fi
-
-	typeset -g prompt_pure_cmd_timestamp=$EPOCHSECONDS
-
-	# Shows the current directory and executed command in the title while a process is active.
-	prompt_pure_set_title 'ignore-escape' "$PWD:t: $2"
 
 	# Disallow Python virtualenv from updating the prompt. Set it to 12 if
 	# untouched by the user to indicate that Pure modified it. Here we use
@@ -140,12 +82,13 @@ prompt_pure_preprompt_render() {
 	# Git branch and dirty status info.
 	typeset -gA prompt_pure_vcs_info
 	if [[ -n $prompt_pure_vcs_info[branch] ]]; then
-		preprompt_parts+=("%F{$git_color}"'${prompt_pure_vcs_info[branch]}'"%F{$git_dirty_color}"'${prompt_pure_git_dirty}%f')
+      preprompt_parts+=("%F{$git_color}("'${prompt_pure_vcs_info[branch]}'")%F{$git_dirty_color}"'${prompt_pure_git_dirty}%f')
 	fi
 	# Git action (for example, merge).
 	if [[ -n $prompt_pure_vcs_info[action] ]]; then
-		preprompt_parts+=("%F{$prompt_pure_colors[git:action]}"'$prompt_pure_vcs_info[action]%f')
+      preprompt_parts+=("%F{$prompt_pure_colors[git:action]}("'$prompt_pure_vcs_info[action])%f')
 	fi
+  # TODO: Keep pull/push arrows? Keep stash symbol?
 	# Git pull/push arrows.
 	if [[ -n $prompt_pure_git_arrows ]]; then
 		preprompt_parts+=('%F{$prompt_pure_colors[git:arrow]}${prompt_pure_git_arrows}%f')
@@ -154,9 +97,6 @@ prompt_pure_preprompt_render() {
 	if [[ -n $prompt_pure_git_stash ]]; then
 		preprompt_parts+=('%F{$prompt_pure_colors[git:stash]}${PURE_GIT_STASH_SYMBOL:-≡}%f')
 	fi
-
-	# Execution time.
-	[[ -n $prompt_pure_cmd_exec_time ]] && preprompt_parts+=('%F{$prompt_pure_colors[execution_time]}${prompt_pure_cmd_exec_time}%f')
 
 	local cleaned_ps1=$PROMPT
 	local -H MATCH MBEGIN MEND
@@ -183,7 +123,7 @@ prompt_pure_preprompt_render() {
 
 	if [[ $1 == precmd ]]; then
 		# Initial newline, for spaciousness.
-		print
+		# print
 	elif [[ $prompt_pure_last_prompt != $expanded_prompt ]]; then
 		# Redraw the prompt.
 		prompt_pure_reset_prompt
@@ -194,13 +134,6 @@ prompt_pure_preprompt_render() {
 
 prompt_pure_precmd() {
 	setopt localoptions noshwordsplit
-
-	# Check execution time and store it in a variable.
-	prompt_pure_check_cmd_exec_time
-	unset prompt_pure_cmd_timestamp
-
-	# Shows the full path in the title.
-	prompt_pure_set_title 'expand-prompt' '%~'
 
 	# Modify the colors if some have changed..
 	prompt_pure_set_colors
@@ -779,12 +712,9 @@ prompt_pure_setup() {
 	# initialized via `promptinit`.
 	setopt noprompt{bang,cr,percent,subst} "prompt${^prompt_opts[@]}"
 
-	if [[ -z $prompt_newline ]]; then
-		# This variable needs to be set, usually set by promptinit.
-		typeset -g prompt_newline=$'\n%{\r%}'
-	fi
+  # %666v expands to the contents of $psvar[666] which is presumably empty
+  prompt_newline='%666v'
 
-	zmodload zsh/datetime
 	zmodload zsh/zle
 	zmodload zsh/parameter
 	zmodload zsh/zutil
@@ -800,7 +730,6 @@ prompt_pure_setup() {
 	# Set the colors.
 	typeset -gA prompt_pure_colors_default prompt_pure_colors
 	prompt_pure_colors_default=(
-		execution_time       yellow
 		git:arrow            cyan
 		git:stash            cyan
 		git:branch           242
@@ -832,11 +761,12 @@ prompt_pure_setup() {
 	fi
 
 	# If a virtualenv is activated, display it in grey.
-	PROMPT='%(12V.%F{$prompt_pure_colors[virtualenv]}%12v%f .)'
+  PROMPT='%(12V.%F{$prompt_pure_colors[virtualenv]} (%12v)%f.)'
 
 	# Prompt turns red if the previous command didn't exit with 0.
 	local prompt_indicator='%(?.%F{$prompt_pure_colors[prompt:success]}.%F{$prompt_pure_colors[prompt:error]})${prompt_pure_state[prompt]}%f '
-	PROMPT+=$prompt_indicator
+  # Add space before indicator since single-line
+	PROMPT+=" $prompt_indicator"
 
 	# Indicate continuation prompt by … and use a darker color for it.
 	PROMPT2='%F{$prompt_pure_colors[prompt:continuation]}… %(1_.%_ .%_)%f'$prompt_indicator
