@@ -570,13 +570,6 @@ prompt_pure_reset_prompt_symbol() {
 	prompt_pure_state[prompt]=${PURE_PROMPT_SYMBOL:-❯}
 }
 
-prompt_pure_update_vim_prompt_widget() {
-	setopt localoptions noshwordsplit
-	prompt_pure_state[prompt]=${${KEYMAP/vicmd/${PURE_PROMPT_VICMD_SYMBOL:-❮}}/(main|viins)/${PURE_PROMPT_SYMBOL:-❯}}
-
-	prompt_pure_reset_prompt
-}
-
 prompt_pure_reset_vim_prompt_widget() {
 	setopt localoptions noshwordsplit
 	prompt_pure_reset_prompt_symbol
@@ -753,11 +746,9 @@ prompt_pure_setup() {
 	prompt_pure_state_setup
 
 	zle -N prompt_pure_reset_prompt
-	zle -N prompt_pure_update_vim_prompt_widget
 	zle -N prompt_pure_reset_vim_prompt_widget
 	if (( $+functions[add-zle-hook-widget] )); then
 		add-zle-hook-widget zle-line-finish prompt_pure_reset_vim_prompt_widget
-		add-zle-hook-widget zle-keymap-select prompt_pure_update_vim_prompt_widget
 	fi
 
 	# If a virtualenv is activated, display it in grey.
